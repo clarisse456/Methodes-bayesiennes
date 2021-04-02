@@ -1,1 +1,165 @@
-ici la code
+kidney <- function(nchain, prop.norm.sd,prop.b.sd, prop.reste.sd,  alpha0, b0, reste0){
+  
+  # definition des variables a partir des donnees dans kidney_data.R
+  # dans nos données, on a qu'une seule colonne donc on a que la somme sur les i 
+  
+  Age <- scale(age_uc) #on scale car cette var est trop grande devant les autres 
+  Sexe <- sex_uc
+  Disease1 <- disease_uc == 1
+  Disease2 <- disease_uc == 2
+  Disease3 <- disease_uc == 3
+  t <- t_uc #nos observations 
+  
+  X = cbind(1, Age, Sexe, Disease1, Disease2, Disease3) #matrice de nos variables
+  n_obs = nrow(X)
+
+  # initialisations de nos chaine de markov
+
+  chain.b = matrix(NA, nchain+1, n_obs)
+  colnames(chain.b) <- paste("b", 1:n_obs)
+  
+  chain.norm = matrix(NA, nchain+1, length(alpha0))
+  colnames(chain.norm) <- c('Alpha', 'Beta_age', 'Beta_sex', 'Beta_dis1', 'Beta_dis2',
+                       'Beta_dis3')
+  
+  chain.reste = matrix(NA, nchain+1, 2)
+  colnames(chain.reste) = c('r', 'tau')
+  
+  
+  chain.b[1,] <- b0
+  chain.norm[1, ] <- alpha0
+  chain.reste[1, ] <- reste0
+  
+  
+  tau_0 = 10^-3
+  
+  # initialisation du taux d'acceptation
+  acc_rates.b <- rep(0, n_obs)
+  
+  acc_rates.norm <- matrix(0, nrow = 1, ncol = length(alpha0))
+  colnames(acc_rates.norm) <- c('Alpha', 'Beta_age', 'Beta_sex', 
+                                'Beta_dis1', 'Beta_dis2','Beta_dis3')
+  
+  acc_rates.r <- 0
+  
+  for (iter in (1:nchain)){
+    
+    current.norm = chain.norm[iter, ]
+    current.b = chain.b[iter, ]
+    current.reste = chain.reste[iter, ]
+    
+    r = current.reste[1]
+    tau = current.reste[2]
+    
+    
+    mu = exp(X%*%current.norm + current.b)
+    
+    #MAJ alpha, beta_k (en tout : 6 )
+    for (j in (1:ncol(chain.norm))){
+      prop.norm = current.norm
+      prop.norm[j] = rnorm(1, current.norm[j], prop.norm.sd[j])
+      mu_prop = exp(X%*%prop.norm +current.b)
+      
+      top = sum(dweibull(t, r, mu_prop, log = TRUE)) + 
+        dnorm(prop.norm[j], 0, 1/sqrt(tau_0), log = TRUE)
+      bottom = sum(dweibull(t, r, mu, log = TRUE)) + 
+        dnorm(current.norm[j], 0, 1/sqrt(tau_0), log = TRUE)
+      
+      acc.prop = exp(top - bottom)
+      
+      if(runif(1) < acc.prop){
+        current.norm = prop.norm
+        mu = mu_prop
+        acc_rates.norm[1, j] = acc_rates.norm[1, j] + 1
+      }
+    }
+    
+    #MAJ bi
+    for(i in (1:nrow(X))){
+      
+      prop.b = rnorm(1, current.b[i], prop.b.sd)
+      mu_prop = exp(X[i,]%*%current.norm +prop.b)  
+      
+      top = dweibull(t[i], r, mu_prop, log= TRUE) + 
+        dnorm(prop.b, 0, sqrt(1/tau), log = TRUE)
+      bottom = dweibull(t[i], r, mu[i], log= TRUE) + 
+        dnorm(current.b[i], 0, sqrt(1/tau), log = TRUE)
+      
+      acc.prop = exp(top - bottom)
+      
+      if (runif(1) < acc.prop){
+        current.b[i] = prop.b
+        mu[i] = mu_prop
+        acc_rates.b[i] = acc_rates.b[i] + 1
+      }
+      
+      
+    }
+    
+    #MAJ reste
+    # tau
+    update_shape_tau = tau_0 + nrow(X)/2                         
+    update_rate_tau = tau_0 + sum(current.b^2)/2
+    
+    tau = rgamma(1, shape = update_shape_tau, rate = update_rate_tau) 
+    
+    # r
+  
+    prop.r <- rlnorm(1, log(r),prop.reste.sd) #log car r > 0 
+    
+    top = sum(dweibull(t, prop.r, mu, log = TRUE)) + dgamma(prop.r, 1,rate = tau_0, log = TRUE)
+    
+    bottom = sum(dweibull(t, r, mu, log = TRUE)) + dgamma(r, 1, rate = tau_0, log = TRUE)
+    
+    acc.prob <- exp(top - bottom) * prop.r / r
+    
+    if (runif(1) < acc.prob){
+      r <- prop.r
+      acc_rates.r = acc_rates.r + 1
+    }
+    
+    current.reste = c(r, tau)
+    
+    chain.norm[iter+1, ] = current.norm
+    chain.b[iter+1, ] = current.b
+    chain.reste[iter+1, ] = current.reste
+      
+    
+  }
+return(list(chain.b = chain.b, chain.reste = chain.reste, chain.norm = chain.norm,
+            acc_rates.b = acc_rates.b/nchain, acc_rates.r = acc_rates.r/nchain,
+            acc_rates.norm = acc_rates.norm/nchain))
+}
+
+
+
+
+
+#test
+#nchain, prop.norm.sd,prop.b.sd, prop.reste.sd,  alpha0, b0, reste0
+
+#'Alpha', 'Beta_age', 'Beta_sex', 'Beta_dis1','Beta_dis2','Beta_dis3'
+prop.norm.sd = c( 1, 0.5, 1, 1, 0.5, 1)
+prop.b = 0.025
+prop.reste.sd = 0.5
+alpha0 = c(1, 1, 1, 1, 1, 1)
+b0 = rep(0, 58)
+reste0 = c(1, 1)
+test = kidney(20000, prop.norm.sd, prop.b, prop.reste.sd, alpha0, b0, reste0)
+
+par(mfrow = c(2,4))
+
+plot(test$chain.norm[,1], type ='l')
+plot(test$chain.norm[,2], type ='l')
+plot(test$chain.norm[,3], type ='l')
+plot(test$chain.norm[,4], type ='l')
+plot(test$chain.norm[,5], type ='l')
+plot(test$chain.norm[,6], type ='l')
+#
+plot(test$chain.reste[,1], type ='l')
+plot(test$chain.reste[,2], type ='l')
+
+test$acc_rates.b
+test$acc_rates.norm
+test$acc_rates.r
+
