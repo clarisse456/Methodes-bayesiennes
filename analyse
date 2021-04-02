@@ -1,0 +1,63 @@
+## Burning
+out <- list(chain.b = test$chain.b[-(1:10000),],
+            chain.reste = test$chain.reste[-(1:10000),],
+            chain.norm = test$chain.norm[-(1:10000),])
+
+## Chaines
+# param?tres suivant une loi normale
+par(mfrow = c(2, 3))
+for (i in (1:6)){
+  plot(out$chain.norm[,i], type = 'l', main = "")
+}
+
+# b, les 4 premi?res
+par(mfrow = c(2, 2))
+for (i in (1:4)){
+  plot(out$chain.b[,i], type = 'l', main = "")
+}
+
+# r et tau
+par(mfrow = c(1, 2))
+for (i in (1:2)){
+  plot(out$chain.reste[,i], type = 'l', main = "")
+}
+
+## densit?
+# param?tres suivant une loi normale
+par(mfrow = c(2, 3))
+for (i in (1:6)){
+  plot(density(out$chain.norm[,i]), main = "")
+}
+
+# b
+par(mfrow = c(2, 2))
+for (i in (1:4)){
+  plot(density(out$chain.b[,i]), main = "")
+}
+
+# r et tau
+par(mfrow = c(1, 2))
+for (i in (1:2)){
+  plot(density(out$chain.reste[,i]), main = "")
+}
+
+## Ad?quation du mod?le
+# estimations des param?tres
+estim.norm <- apply(out$chain.norm, 2, median)
+estim.b <- apply(out$chain.b, 2, mean)
+estim.r <- median(out$chain.reste[,1])
+
+# donnees
+dsgn_mat <- cbind(1, scale(age_uc), sex_uc, disease_uc == 1, disease_uc == 2, disease_uc == 3)
+
+# calcul de mu
+mu_hat <- exp(dsgn_mat%*%estim.norm + estim.b)
+
+# simulation
+proba <- rweibull(58, estim.r, mu_hat)
+
+par(mfrow = c(1, 1))
+plot(density(proba), main="", col = "orange")
+lines(density(t_uc), main="", col = "red")
+legend('topright', c('Donnees', 'Simulation'), col = c('red', 'orange'), lty = 1)
+
